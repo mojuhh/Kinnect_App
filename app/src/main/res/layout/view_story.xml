@@ -4,10 +4,19 @@
     android:layout_height="match_parent"
     android:background="#1E232E">
 
-    <View
+    <ImageView
+        android:id="@+id/ivStoryMedia"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#1C2836" />
+        android:scaleType="centerCrop"
+        android:visibility="visible" />
+
+    <VideoView
+        android:id="@+id/vvStoryMedia"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
+        android:visibility="gone" />
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -28,6 +37,7 @@
             android:gravity="center_vertical">
 
             <TextView
+                android:id="@+id/tvAvatar"
                 android:layout_width="32dp"
                 android:layout_height="32dp"
                 android:background="@drawable/avatar_circle"
@@ -39,6 +49,7 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/tvUsernameTime"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
@@ -63,6 +74,7 @@
             android:layout_weight="1" />
 
         <TextView
+            android:id="@+id/tvStoryTextLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
@@ -85,36 +97,41 @@
             android:layout_height="44dp"
             android:gravity="center_vertical">
 
-            <TextView
+            <EditText
+                android:id="@+id/etReplyMessage"
                 android:layout_width="0dp"
                 android:layout_height="36dp"
                 android:layout_weight="1"
                 android:background="@drawable/rounded_card"
                 android:gravity="center_vertical"
+                android:hint="Send message..."
                 android:paddingStart="12dp"
-                android:text="Send message..."
-                android:textColor="#B0FFFFFF"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#B0FFFFFF"
                 android:textSize="12sp" />
 
             <ImageView
+                android:id="@+id/btnReactionLike"
                 android:layout_width="28dp"
                 android:layout_height="28dp"
                 android:contentDescription="Like"
                 android:src="@drawable/thumb_up" />
 
-        <ImageView
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:layout_marginStart="4dp"
-            android:contentDescription="Heart"
-            android:src="@drawable/favorite" />
+            <ImageView
+                android:id="@+id/btnReactionHeart"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginStart="4dp"
+                android:contentDescription="Heart"
+                android:src="@drawable/favorite" />
 
-        <ImageView
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:layout_marginStart="4dp"
-            android:contentDescription="Haha"
-            android:src="@drawable/sentiment_satisfied" />
+            <ImageView
+                android:id="@+id/btnReactionHaha"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginStart="4dp"
+                android:contentDescription="Haha"
+                android:src="@drawable/sentiment_satisfied" />
         </LinearLayout>
     </LinearLayout>
 

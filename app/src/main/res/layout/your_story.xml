@@ -4,6 +4,20 @@
     android:layout_height="match_parent"
     android:background="#789269">
 
+    <ImageView
+        android:id="@+id/ivStoryMedia"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:visibility="visible" />
+
+    <VideoView
+        android:id="@+id/vvStoryMedia"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
+        android:visibility="gone" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -22,6 +36,7 @@
             android:gravity="center_vertical">
 
             <TextView
+                android:id="@+id/tvAvatar"
                 android:layout_width="32dp"
                 android:layout_height="32dp"
                 android:background="@drawable/avatar_circle"
@@ -36,13 +51,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:text="Your story · 2h"
+                android:text="Your story · 2h  ✕"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold" />
         </LinearLayout>
     </LinearLayout>
 
     <TextView
+        android:id="@+id/tvStoryTextLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_vertical"
@@ -66,6 +82,7 @@
         android:paddingEnd="12dp">
 
         <TextView
+            android:id="@+id/tvSeenBy"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -73,7 +90,13 @@
             android:textColor="#FFFFFF"
             android:textSize="12sp" />
 
-        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:gravity="center" android:orientation="vertical">
+        <LinearLayout
+            android:id="@+id/btnCreateNewStory"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:gravity="center"
+            android:orientation="vertical">
             <ImageView android:layout_width="18dp" android:layout_height="18dp" android:contentDescription="Create" android:src="@drawable/add" />
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Create" android:textColor="#FFFFFF" android:textSize="10sp" />
         </LinearLayout>

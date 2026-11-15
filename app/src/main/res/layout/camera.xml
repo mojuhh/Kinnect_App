@@ -53,9 +53,12 @@
             android:paddingEnd="24dp">
 
             <View
+                android:id="@+id/btnGalleryPicker"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:background="#D1B89D" />
+                android:background="#D1B89D"
+                android:clickable="true"
+                android:focusable="true" />
 
             <ImageView
                 android:layout_width="0dp"

@@ -55,19 +55,32 @@ class ChatsActivity : AppCompatActivity() {
 
                 for (chatSnap in snapshot.children) {
                     val chatId = chatSnap.key ?: continue
-                    if (chatId.contains(currentUid) || chatSnap.child("participants").hasChild(currentUid)) {
+                    val participantsSnap = chatSnap.child("participants")
+                    if (chatId.contains(currentUid) || participantsSnap.hasChild(currentUid)) {
                         val lastMessage = chatSnap.child("lastMessage").getValue(String::class.java) ?: ""
                         val lastMessageTime = chatSnap.child("lastMessageTime").getValue(Long::class.java) ?: 0L
                         val lastSenderId = chatSnap.child("lastMessageSenderId").getValue(String::class.java) ?: ""
                         val unreadBy = chatSnap.child("unreadBy").child(currentUid).getValue(Boolean::class.java) ?: false
 
-                        // Find other user name
-                        var otherName = "Aisha Khan"
-                        var otherUid = "demo_aisha"
+                        // Identify the other participant's UID
+                        var otherUid = ""
+                        for (pSnap in participantsSnap.children) {
+                            if (pSnap.key != currentUid) {
+                                otherUid = pSnap.key ?: ""
+                                break
+                            }
+                        }
+                        if (otherUid.isEmpty()) {
+                            val parts = chatId.split("_")
+                            otherUid = parts.firstOrNull { it != currentUid } ?: "demo_aisha"
+                        }
 
-                        if (chatSnap.hasChild("otherUserName")) {
-                            otherName = chatSnap.child("otherUserName").getValue(String::class.java) ?: "Aisha Khan"
-                            otherUid = chatSnap.child("otherUserId").getValue(String::class.java) ?: "demo_aisha"
+                        // Retrieve other user's name from userNames or static property
+                        val userNamesSnap = chatSnap.child("userNames")
+                        val otherName = if (userNamesSnap.hasChild(otherUid)) {
+                            userNamesSnap.child(otherUid).getValue(String::class.java) ?: "User"
+                        } else {
+                            chatSnap.child("otherUserName").getValue(String::class.java) ?: "Aisha Khan"
                         }
 
                         val item = ChatItem(
@@ -83,7 +96,6 @@ class ChatsActivity : AppCompatActivity() {
                     }
                 }
 
-                // If no chats exist in Firebase yet, populate default demo chats for smooth testing
                 if (chatList.isEmpty()) {
                     chatList.add(
                         ChatItem(

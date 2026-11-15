@@ -46,6 +46,7 @@ class DmActivity : AppCompatActivity() {
 
     private lateinit var auth: FirebaseAuth
     private var currentUid = ""
+    private var currentUserName = "You"
     private var receiverUid = "aisha_uid"
     private var receiverName = "Aisha Khan"
     private var chatId = ""
@@ -53,7 +54,6 @@ class DmActivity : AppCompatActivity() {
     private var replyToMessageId = ""
     private var replyToMessageText = ""
 
-    // Image Picker Launcher
     private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let { sendImageMessage(it) }
     }
@@ -138,7 +138,28 @@ class DmActivity : AppCompatActivity() {
             cancelReply()
         }
 
+        fetchCurrentUserInfo()
         loadMessages()
+    }
+
+    private fun fetchCurrentUserInfo() {
+        if (currentUid.isEmpty()) return
+        val dbRef = FirebaseDatabase.getInstance().reference.child("users").child(currentUid)
+        dbRef.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (snapshot.exists()) {
+                    val name = snapshot.child("name").getValue(String::class.java)
+                    val username = snapshot.child("username").getValue(String::class.java)
+                    currentUserName = when {
+                        !name.isNullOrEmpty() -> name
+                        !username.isNullOrEmpty() -> username
+                        else -> "You"
+                    }
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        })
     }
 
     private fun getChatId(uid1: String, uid2: String): String {
@@ -191,7 +212,6 @@ class DmActivity : AppCompatActivity() {
                         messageList.add(item)
                     }
 
-                    // Seed default sample messages if conversation is empty
                     if (messageList.isEmpty()) {
                         val now = System.currentTimeMillis()
                         val m1 = MessageItem(
@@ -205,7 +225,7 @@ class DmActivity : AppCompatActivity() {
                         val m2 = MessageItem(
                             messageId = "sample_2",
                             senderId = currentUid,
-                            senderName = "You",
+                            senderName = currentUserName,
                             type = "text",
                             content = "Yes, obviously",
                             timestamp = now - 60000
@@ -219,7 +239,6 @@ class DmActivity : AppCompatActivity() {
                         rvMessages.smoothScrollToPosition(messageList.size - 1)
                     }
 
-                    // Clear unread flag for this user
                     dbRef.child("chats").child(chatId).child("unreadBy").child(currentUid).setValue(false)
                 }
 
@@ -239,7 +258,7 @@ class DmActivity : AppCompatActivity() {
         val msgMap = mapOf(
             "messageId" to msgId,
             "senderId" to currentUid,
-            "senderName" to "You",
+            "senderName" to currentUserName,
             "type" to "text",
             "content" to text,
             "timestamp" to now,
@@ -250,8 +269,6 @@ class DmActivity : AppCompatActivity() {
         )
 
         msgRef.setValue(msgMap)
-
-        // Update chat meta
         updateChatMeta(text, now)
 
         etMessageInput.setText("")
@@ -275,7 +292,7 @@ class DmActivity : AppCompatActivity() {
             val msgMap = mapOf(
                 "messageId" to msgId,
                 "senderId" to currentUid,
-                "senderName" to "You",
+                "senderName" to currentUserName,
                 "type" to "image",
                 "content" to "📷 Photo",
                 "imageUrl" to base64Image,
@@ -303,7 +320,7 @@ class DmActivity : AppCompatActivity() {
         val msgMap = mapOf(
             "messageId" to msgId,
             "senderId" to currentUid,
-            "senderName" to "You",
+            "senderName" to currentUserName,
             "type" to "post",
             "content" to "📌 Shared a post: Sunset at Clifton Beach",
             "timestamp" to now,
@@ -324,9 +341,8 @@ class DmActivity : AppCompatActivity() {
             "lastMessage" to lastMessage,
             "lastMessageTime" to timestamp,
             "lastMessageSenderId" to currentUid,
-            "otherUserName" to receiverName,
-            "otherUserId" to receiverUid,
             "participants" to mapOf(currentUid to true, receiverUid to true),
+            "userNames" to mapOf(currentUid to currentUserName, receiverUid to receiverName),
             "unreadBy" to mapOf(receiverUid to true)
         )
         dbRef.child("chats").child(chatId).updateChildren(chatMeta)
@@ -346,13 +362,12 @@ class DmActivity : AppCompatActivity() {
     private fun showMessageOptionsDialog(message: MessageItem) {
         val isOwnMessage = message.senderId == currentUid
         val elapsedMs = System.currentTimeMillis() - message.timestamp
-        val isWithin5Min = elapsedMs <= 5 * 60 * 1000 // 5 minutes = 300,000 ms
+        val isWithin5Min = elapsedMs <= 5 * 60 * 1000
 
         val options = mutableListOf<String>()
         options.add("Reply")
         options.add("Heart Reaction ❤️")
 
-        // Edit & Delete option ONLY appear if own message AND sent within 5 minutes
         if (isOwnMessage && isWithin5Min && !message.isDeleted) {
             options.add("Edit Message")
             options.add("Delete Message")

@@ -79,10 +79,14 @@ class MessagesAdapter(
                     if (bitmap != null) {
                         holder.ivMessageImage.setImageBitmap(bitmap)
                     } else {
-                        holder.ivMessageImage.visibility = View.GONE
+                        holder.ivMessageImage.setImageURI(android.net.Uri.parse(message.imageUrl))
                     }
                 } catch (e: Exception) {
-                    holder.ivMessageImage.visibility = View.GONE
+                    try {
+                        holder.ivMessageImage.setImageURI(android.net.Uri.parse(message.imageUrl))
+                    } catch (_: Exception) {
+                        holder.ivMessageImage.visibility = View.GONE
+                    }
                 }
             } else {
                 holder.ivMessageImage.visibility = View.GONE
