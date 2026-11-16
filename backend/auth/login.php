@@ -1,22 +1,35 @@
 <?php
 require_once __DIR__ . '/../common.php';
 
-$email = $_POST['email'] ?? '';
-$password = $_POST['password'] ?? '';
+$in = body();
+$email = trim($in['email'] ?? '');
+$password = $in['password'] ?? '';
 
 if (empty($email) || empty($password)) {
-    sendResponse('error', 'Email and password are required');
+    fail('Email and password are required');
 }
 
-$conn = getDbConnection();
-$stmt = $conn->prepare("SELECT uid, email, username, name FROM users WHERE email = ?");
-$stmt->bind_param("s", $email);
-$stmt->execute();
-$result = $stmt->get_result();
+$conn = db();
+$st = $conn->prepare('SELECT id, password_hash, profile_complete, name, username FROM users WHERE email=?');
+$st->execute([$email]);
+$user = $st->fetch();
 
-if ($user = $result->fetch_assoc()) {
-    sendResponse('success', 'Login successful', ['user' => $user]);
-} else {
-    sendResponse('error', 'User not found');
+if (!$user || !password_verify($password, $user['password_hash'])) {
+    fail('Invalid email or password', 400);
 }
+
+$token = bin2hex(random_bytes(32));
+$st = $conn->prepare('INSERT INTO sessions (user_id, token) VALUES (?, ?)');
+$st->execute([$user['id'], $token]);
+
+$st = $conn->prepare('UPDATE users SET is_online=1, last_seen=UTC_TIMESTAMP() WHERE id=?');
+$st->execute([$user['id']]);
+
+out([
+    'token' => $token,
+    'user_id' => (int)$user['id'],
+    'name' => $user['name'],
+    'username' => $user['username'],
+    'profile_complete' => (int)$user['profile_complete']
+]);
 ?>

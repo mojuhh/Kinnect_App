@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:orientation="vertical">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#789269">
+
+        <ImageView
+            android:id="@+id/ivStoryMedia"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:visibility="visible" />
+
+        <VideoView
+            android:id="@+id/vvStoryMedia"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:gravity="center_vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
+
+            <TextView
+                android:id="@+id/btnBack"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="#60000000"
+                android:gravity="center"
+                android:text="✕"
+                android:textColor="#FFFFFF" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <ImageView android:id="@+id/btnAddTag" android:layout_width="32dp" android:layout_height="32dp" android:layout_marginStart="6dp" android:background="#60000000" android:contentDescription="Add Tag" android:padding="6dp" android:src="@drawable/person_add" />
+            <ImageView android:id="@+id/btnAddText" android:layout_width="32dp" android:layout_height="32dp" android:layout_marginStart="6dp" android:background="#60000000" android:contentDescription="Text" android:padding="6dp" android:src="@drawable/text_fields" />
+            <ImageView android:id="@+id/btnStickers" android:layout_width="32dp" android:layout_height="32dp" android:layout_marginStart="6dp" android:background="#60000000" android:contentDescription="Stickers" android:padding="6dp" android:src="@drawable/sentiment_satisfied" />
+            <ImageView android:id="@+id/btnMusic" android:layout_width="32dp" android:layout_height="32dp" android:layout_marginStart="6dp" android:background="#60000000" android:contentDescription="Music" android:padding="6dp" android:src="@drawable/music_note" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/etStoryTextLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:layout_marginStart="24dp"
+            android:background="#A63321"
+            android:hint="Type text label..."
+            android:textColorHint="#E0E0E0"
+            android:padding="8dp"
+            android:rotation="-2"
+            android:text="Saturday plans"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:inputType="textMultiLine"
+            android:maxLines="3" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <TextView
+            android:id="@+id/btnYourStory"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:background="#333333"
+            android:gravity="center"
+            android:text="Your story"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/btnCloseFriends"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:background="#333333"
+            android:gravity="center"
+            android:text="Close friends"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/btnShareYourStory"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:background="@color/teal"
+            android:gravity="center"
+            android:text="➔"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+</LinearLayout>

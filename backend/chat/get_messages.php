@@ -1,22 +1,35 @@
 <?php
 require_once __DIR__ . '/../common.php';
 
-$chatId = $_GET['chat_id'] ?? '';
+$uid = auth();
+$peerId = (int)($_GET['peer_id'] ?? 0);
+$afterId = (int)($_GET['after_id'] ?? 0);
+$since = $_GET['since'] ?? null;
 
-if (empty($chatId)) {
-    sendResponse('error', 'chat_id is required');
+if (!$peerId) {
+    fail('peer_id required');
 }
 
-$conn = getDbConnection();
-$stmt = $conn->prepare("SELECT * FROM messages WHERE chat_id = ? ORDER BY timestamp ASC");
-$stmt->bind_param("s", $chatId);
-$stmt->execute();
-$result = $stmt->get_result();
+$conn = db();
 
-$messages = [];
-while ($row = $result->fetch_assoc()) {
-    $messages[] = $row;
+if ($since) {
+    $st = $conn->prepare('
+        SELECT * FROM messages
+        WHERE ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+          AND updated_at > ?
+        ORDER BY id ASC
+    ');
+    $st->execute([$uid, $peerId, $peerId, $uid, $since]);
+} else {
+    $st = $conn->prepare('
+        SELECT * FROM messages
+        WHERE ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+          AND id > ?
+        ORDER BY id ASC
+    ');
+    $st->execute([$uid, $peerId, $peerId, $uid, $afterId]);
 }
 
-sendResponse('success', 'Messages fetched', ['messages' => $messages]);
+$messages = $st->fetchAll();
+out($messages);
 ?>

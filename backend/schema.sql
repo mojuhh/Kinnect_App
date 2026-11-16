@@ -1,91 +1,129 @@
--- Kinnect Application Database Schema
-CREATE DATABASE IF NOT EXISTS kinnect_db;
-USE kinnect_db;
+CREATE DATABASE IF NOT EXISTS kinnect DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE kinnect;
 
--- Users Table
 CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    uid VARCHAR(128) UNIQUE NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    username VARCHAR(100),
-    name VARCHAR(100),
-    bio TEXT,
-    phone VARCHAR(30),
-    status VARCHAR(20) DEFAULT 'offline',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  username VARCHAR(40) UNIQUE NULL,
+  email VARCHAR(120) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  bio VARCHAR(255) DEFAULT '',
+  profile_pic VARCHAR(255) NULL,
+  cover_pic VARCHAR(255) NULL,
+  profile_complete TINYINT DEFAULT 0,
+  is_online TINYINT DEFAULT 0,
+  last_seen DATETIME NULL,
+  fcm_token VARCHAR(255) NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Posts Table
+CREATE TABLE IF NOT EXISTS sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  token CHAR(64) UNIQUE NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS friendships (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sender_id INT NOT NULL,
+  receiver_id INT NOT NULL,
+  status ENUM('pending', 'accepted') DEFAULT 'pending',
+  client_uuid CHAR(36) UNIQUE NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY pair (sender_id, receiver_id)
+);
+
 CREATE TABLE IF NOT EXISTS posts (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    post_id VARCHAR(128) UNIQUE NOT NULL,
-    user_id VARCHAR(128) NOT NULL,
-    username VARCHAR(100),
-    content TEXT,
-    image_url TEXT,
-    timestamp BIGINT NOT NULL,
-    likes_count INT DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  text TEXT,
+  client_uuid CHAR(36) UNIQUE NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Stories Table
+CREATE TABLE IF NOT EXISTS post_images (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  post_id INT NOT NULL,
+  path VARCHAR(255) NOT NULL,
+  sort_order INT DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS reactions (
+  post_id INT NOT NULL,
+  user_id INT NOT NULL,
+  type ENUM('like', 'love', 'care', 'haha', 'wow', 'sad') NOT NULL,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (post_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS comments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  post_id INT NOT NULL,
+  user_id INT NOT NULL,
+  parent_id INT NULL,
+  text TEXT,
+  image_path VARCHAR(255) NULL,
+  client_uuid CHAR(36) UNIQUE NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS comment_likes (
+  comment_id INT NOT NULL,
+  user_id INT NOT NULL,
+  PRIMARY KEY (comment_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS stories (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    story_id VARCHAR(128) UNIQUE NOT NULL,
-    user_id VARCHAR(128) NOT NULL,
-    username VARCHAR(100),
-    user_avatar VARCHAR(50),
-    media_uri TEXT,
-    media_type VARCHAR(20) DEFAULT 'image',
-    text_label TEXT,
-    audience VARCHAR(50) DEFAULT 'your_story',
-    timestamp BIGINT NOT NULL,
-    expires_at BIGINT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  media_path VARCHAR(255) NOT NULL,
+  media_type ENUM('image', 'video') NOT NULL,
+  label VARCHAR(120),
+  audience ENUM('story', 'close_friends') DEFAULT 'story',
+  client_uuid CHAR(36) UNIQUE NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Messages Table
+CREATE TABLE IF NOT EXISTS close_friends (
+  user_id INT NOT NULL,
+  friend_id INT NOT NULL,
+  PRIMARY KEY (user_id, friend_id)
+);
+
 CREATE TABLE IF NOT EXISTS messages (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    message_id VARCHAR(128) UNIQUE NOT NULL,
-    chat_id VARCHAR(255) NOT NULL,
-    sender_id VARCHAR(128) NOT NULL,
-    sender_name VARCHAR(100),
-    type VARCHAR(20) DEFAULT 'text',
-    content TEXT,
-    image_url LONGTEXT,
-    reply_to_id VARCHAR(128),
-    reply_to_text TEXT,
-    is_edited TINYINT(1) DEFAULT 0,
-    is_deleted TINYINT(1) DEFAULT 0,
-    timestamp BIGINT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sender_id INT NOT NULL,
+  receiver_id INT NOT NULL,
+  type ENUM('text', 'image', 'video', 'file', 'system') DEFAULT 'text',
+  content TEXT,
+  media_path VARCHAR(255) NULL,
+  file_name VARCHAR(150) NULL,
+  client_uuid CHAR(36) UNIQUE NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  edited_at DATETIME NULL,
+  is_deleted TINYINT DEFAULT 0,
+  INDEX conv (sender_id, receiver_id, id)
 );
 
--- Chats Metadata Table
-CREATE TABLE IF NOT EXISTS chats (
-    chat_id VARCHAR(255) PRIMARY KEY,
-    last_message TEXT,
-    last_message_time BIGINT,
-    last_sender_id VARCHAR(128),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS calls (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  caller_id INT NOT NULL,
+  receiver_id INT NOT NULL,
+  type ENUM('audio', 'video'),
+  status ENUM('missed', 'answered', 'declined'),
+  started_at DATETIME,
+  duration INT DEFAULT 0,
+  client_uuid CHAR(36) UNIQUE NOT NULL
 );
 
--- Friends Table
-CREATE TABLE IF NOT EXISTS friends (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(128) NOT NULL,
-    friend_id VARCHAR(128) NOT NULL,
-    status VARCHAR(20) DEFAULT 'accepted',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Notifications Table
 CREATE TABLE IF NOT EXISTS notifications (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(128) NOT NULL,
-    title VARCHAR(255),
-    message TEXT,
-    is_read TINYINT(1) DEFAULT 0,
-    timestamp BIGINT NOT NULL
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  type VARCHAR(30),
+  from_user_id INT,
+  data TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

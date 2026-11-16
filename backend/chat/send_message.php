@@ -1,32 +1,40 @@
 <?php
 require_once __DIR__ . '/../common.php';
 
-$messageId = $_POST['message_id'] ?? uniqid('msg_');
-$chatId = $_POST['chat_id'] ?? '';
-$senderId = $_POST['sender_id'] ?? '';
-$senderName = $_POST['sender_name'] ?? '';
-$type = $_POST['type'] ?? 'text';
-$content = $_POST['content'] ?? '';
-$imageUrl = $_POST['image_url'] ?? '';
-$replyToId = $_POST['reply_to_id'] ?? '';
-$replyToText = $_POST['reply_to_text'] ?? '';
-$timestamp = $_POST['timestamp'] ?? (time() * 1000);
+$uid = auth();
+$in = body();
+$receiverId = (int)($in['receiver_id'] ?? $in['peer_id'] ?? 0);
+$type = $in['type'] ?? 'text'; // text | image | video | file | system
+$content = trim($in['content'] ?? '');
+$uuid = $in['client_uuid'] ?? fail('client_uuid required');
 
-if (empty($chatId) || empty($senderId)) {
-    sendResponse('error', 'chat_id and sender_id are required');
+if (!$receiverId) {
+    fail('receiver_id required');
 }
 
-$conn = getDbConnection();
-$stmt = $conn->prepare("INSERT INTO messages (message_id, chat_id, sender_id, sender_name, type, content, image_url, reply_to_id, reply_to_text, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-$stmt->bind_param("sssssssssi", $messageId, $chatId, $senderId, $senderName, $type, $content, $imageUrl, $replyToId, $replyToText, $timestamp);
+$conn = db();
 
-if ($stmt->execute()) {
-    $stmtChat = $conn->prepare("INSERT INTO chats (chat_id, last_message, last_message_time, last_sender_id) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE last_message = VALUES(last_message), last_message_time = VALUES(last_message_time), last_sender_id = VALUES(last_sender_id)");
-    $stmtChat->bind_param("ssis", $chatId, $content, $timestamp, $senderId);
-    $stmtChat->execute();
-
-    sendResponse('success', 'Message sent', ['message_id' => $messageId]);
-} else {
-    sendResponse('error', 'Failed to send message');
+$st = $conn->prepare('SELECT * FROM messages WHERE client_uuid=?');
+$st->execute([$uuid]);
+if ($row = $st->fetch()) {
+    out($row);
 }
+
+$mediaPath = save_upload('file', 'chat', ['jpg', 'jpeg', 'png', 'mp4', 'pdf', 'doc', 'docx']);
+$fileName = !empty($_FILES['file']['name']) ? $_FILES['file']['name'] : null;
+
+$st = $conn->prepare('
+    INSERT INTO messages (sender_id, receiver_id, type, content, media_path, file_name, client_uuid)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+');
+$st->execute([$uid, $receiverId, $type, $content, $mediaPath, $fileName, $uuid]);
+$msgId = (int)$conn->lastInsertId();
+
+// Create notification for receiver
+$stN = $conn->prepare('INSERT INTO notifications (user_id, type, from_user_id, data) VALUES (?, "message", ?, ?)');
+$stN->execute([$receiverId, $uid, json_encode(['message_id' => $msgId, 'peer_id' => $uid])]);
+
+$stFetch = $conn->prepare('SELECT * FROM messages WHERE id=?');
+$stFetch->execute([$msgId]);
+out($stFetch->fetch());
 ?>

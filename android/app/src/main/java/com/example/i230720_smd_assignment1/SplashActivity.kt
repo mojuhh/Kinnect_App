@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
@@ -13,25 +14,52 @@ import com.google.firebase.database.ValueEventListener
 
 class SplashActivity : AppCompatActivity() {
 
+    private var hasNavigated = false
+    private val handler = Handler(Looper.getMainLooper())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.splash)
 
-        Handler(Looper.getMainLooper()).postDelayed({
-            val auth = FirebaseAuth.getInstance()
-            val currentUser = auth.currentUser
+        findViewById<View>(android.R.id.content)?.setOnClickListener {
+            proceedNext()
+        }
 
-            if (currentUser != null) {
-                val uid = currentUser.uid
-                val dbRef = FirebaseDatabase.getInstance().reference
+        handler.postDelayed({
+            proceedNext()
+        }, 2000)
+    }
 
-                // Mark user online
+    private fun proceedNext() {
+        if (hasNavigated) return
+        hasNavigated = true
+
+        val auth = FirebaseAuth.getInstance()
+        val currentUser = auth.currentUser
+
+        if (currentUser != null) {
+            val uid = currentUser.uid
+            val dbRef = FirebaseDatabase.getInstance().reference
+
+            try {
                 dbRef.child("users").child(uid).child("status").setValue("online")
+            } catch (_: Exception) {}
 
-                // Check profile completion status
+            val dbTimeoutRunnable = Runnable {
+                if (!isFinishing && !isDestroyed) {
+                    startActivity(Intent(this@SplashActivity, FeedActivity::class.java))
+                    finish()
+                }
+            }
+            handler.postDelayed(dbTimeoutRunnable, 2500)
+
+            try {
                 dbRef.child("users").child(uid)
                     .addListenerForSingleValueEvent(object : ValueEventListener {
                         override fun onDataChange(snapshot: DataSnapshot) {
+                            handler.removeCallbacks(dbTimeoutRunnable)
+                            if (isFinishing || isDestroyed) return
+
                             val isFirstTime = snapshot.child("isFirstTime").getValue(Boolean::class.java) ?: false
                             val username = snapshot.child("username").getValue(String::class.java) ?: ""
 
@@ -44,14 +72,26 @@ class SplashActivity : AppCompatActivity() {
                         }
 
                         override fun onCancelled(error: DatabaseError) {
-                            startActivity(Intent(this@SplashActivity, FeedActivity::class.java))
-                            finish()
+                            handler.removeCallbacks(dbTimeoutRunnable)
+                            if (!isFinishing && !isDestroyed) {
+                                startActivity(Intent(this@SplashActivity, FeedActivity::class.java))
+                                finish()
+                            }
                         }
                     })
-            } else {
-                startActivity(Intent(this@SplashActivity, LoginActivity::class.java))
+            } catch (_: Exception) {
+                handler.removeCallbacks(dbTimeoutRunnable)
+                startActivity(Intent(this@SplashActivity, FeedActivity::class.java))
                 finish()
             }
-        }, 5000) // 5 seconds as specified
+        } else {
+            startActivity(Intent(this@SplashActivity, LoginActivity::class.java))
+            finish()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        handler.removeCallbacksAndMessages(null)
     }
 }
