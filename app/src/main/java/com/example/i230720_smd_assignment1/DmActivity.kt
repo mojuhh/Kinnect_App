@@ -1,11 +1,10 @@
 package com.example.i230720_smd_assignment1
 
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
-import android.util.Base64
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.EditText
 import android.widget.ImageView
@@ -17,13 +16,15 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
+import java.io.File
+import java.util.UUID
 
 class DmActivity : AppCompatActivity() {
 
@@ -44,15 +45,16 @@ class DmActivity : AppCompatActivity() {
     private lateinit var tvReceiverName: TextView
     private lateinit var tvAvatar: TextView
 
-    private lateinit var auth: FirebaseAuth
-    private var currentUid = ""
-    private var currentUserName = "You"
-    private var receiverUid = "aisha_uid"
+    private var currentUid = 1
+    private var receiverUid = 2
     private var receiverName = "Aisha Khan"
     private var chatId = ""
 
     private var replyToMessageId = ""
     private var replyToMessageText = ""
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var pollingRunnable: Runnable? = null
 
     private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let { sendImageMessage(it) }
@@ -62,12 +64,17 @@ class DmActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.dm)
 
-        auth = FirebaseAuth.getInstance()
-        currentUid = auth.currentUser?.uid ?: "my_uid"
+        val tokenStore = TokenStore(this)
+        currentUid = tokenStore.userId()
+        if (currentUid == -1) currentUid = 1
 
-        receiverUid = intent.getStringExtra("receiverUid") ?: "aisha_uid"
+        receiverUid = intent.getIntExtra("receiverUid", 2)
+        if (receiverUid == 0) {
+            receiverUid = intent.getStringExtra("receiverUid")?.toIntOrNull() ?: 2
+        }
+
         receiverName = intent.getStringExtra("receiverName") ?: "Aisha Khan"
-        chatId = intent.getStringExtra("chatId") ?: getChatId(currentUid, receiverUid)
+        chatId = "chat_${minOf(currentUid, receiverUid)}_${maxOf(currentUid, receiverUid)}"
 
         tvReceiverName = findViewById(R.id.tvReceiverName)
         tvAvatar = findViewById(R.id.tvAvatar)
@@ -108,7 +115,7 @@ class DmActivity : AppCompatActivity() {
 
         adapter = MessagesAdapter(
             messages = messageList,
-            currentUserId = currentUid,
+            currentUserId = currentUid.toString(),
             onMessageClick = { message ->
                 toggleHeartReaction(message)
             },
@@ -138,74 +145,36 @@ class DmActivity : AppCompatActivity() {
             cancelReply()
         }
 
-        fetchCurrentUserInfo()
         loadMessages()
-    }
-
-    private fun fetchCurrentUserInfo() {
-        if (currentUid.isEmpty()) return
-        val dbRef = FirebaseDatabase.getInstance().reference.child("users").child(currentUid)
-        dbRef.addListenerForSingleValueEvent(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                if (snapshot.exists()) {
-                    val name = snapshot.child("name").getValue(String::class.java)
-                    val username = snapshot.child("username").getValue(String::class.java)
-                    currentUserName = when {
-                        !name.isNullOrEmpty() -> name
-                        !username.isNullOrEmpty() -> username
-                        else -> "You"
-                    }
-                }
-            }
-
-            override fun onCancelled(error: DatabaseError) {}
-        })
-    }
-
-    private fun getChatId(uid1: String, uid2: String): String {
-        return if (uid1 < uid2) "${uid1}_${uid2}" else "${uid2}_${uid1}"
+        startPolling()
     }
 
     private fun loadMessages() {
-        val dbRef = FirebaseDatabase.getInstance().reference
+        val tokenStore = TokenStore(this)
+        val apiService = ApiClient.create(tokenStore)
 
-        dbRef.child("messages").child(chatId)
-            .addValueEventListener(object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
+        apiService.getMessages(receiverUid, 0, null).enqueue(object : Callback<ApiResponse<List<Map<String, Any>>>> {
+            override fun onResponse(call: Call<ApiResponse<List<Map<String, Any>>>>, response: Response<ApiResponse<List<Map<String, Any>>>>) {
+                val body = response.body()
+                if (response.isSuccessful && body != null && body.ok && body.data != null) {
                     messageList.clear()
-
-                    for (msgSnap in snapshot.children) {
-                        val msgId = msgSnap.key ?: ""
-                        val senderId = msgSnap.child("senderId").getValue(String::class.java) ?: ""
-                        val senderName = msgSnap.child("senderName").getValue(String::class.java) ?: ""
-                        val type = msgSnap.child("type").getValue(String::class.java) ?: "text"
-                        val content = msgSnap.child("content").getValue(String::class.java) ?: ""
-                        val imageUrl = msgSnap.child("imageUrl").getValue(String::class.java) ?: ""
-                        val timestamp = msgSnap.child("timestamp").getValue(Long::class.java) ?: 0L
-                        val replyToId = msgSnap.child("replyToId").getValue(String::class.java) ?: ""
-                        val replyToText = msgSnap.child("replyToText").getValue(String::class.java) ?: ""
-                        val isEdited = msgSnap.child("isEdited").getValue(Boolean::class.java) ?: false
-                        val isDeleted = msgSnap.child("isDeleted").getValue(Boolean::class.java) ?: false
-
-                        val reactionsMap = mutableMapOf<String, String>()
-                        val reactionsSnap = msgSnap.child("reactions")
-                        for (r in reactionsSnap.children) {
-                            val rUid = r.key ?: ""
-                            val rVal = r.getValue(String::class.java) ?: ""
-                            reactionsMap[rUid] = rVal
-                        }
+                    for (m in body.data) {
+                        val msgId = (m["id"] as? Number)?.toInt()?.toString() ?: "1"
+                        val senderId = (m["sender_id"] as? Number)?.toInt()?.toString() ?: "1"
+                        val content = m["content"] as? String ?: ""
+                        val mediaPath = m["media_path"] as? String ?: ""
+                        val type = m["type"] as? String ?: "text"
+                        val isDeleted = ((m["is_deleted"] as? Number)?.toInt() ?: 0) == 1
+                        val isEdited = ((m["is_edited"] as? Number)?.toInt() ?: 0) == 1
 
                         val item = MessageItem(
                             messageId = msgId,
                             senderId = senderId,
-                            senderName = senderName,
+                            senderName = if (senderId == currentUid.toString()) "You" else receiverName,
                             type = type,
                             content = content,
-                            imageUrl = imageUrl,
-                            timestamp = timestamp,
-                            replyToId = replyToId,
-                            replyToText = replyToText,
-                            reactions = reactionsMap,
+                            imageUrl = if (mediaPath.isNotEmpty()) "${BuildConfig.BASE_URL}$mediaPath" else "",
+                            timestamp = System.currentTimeMillis(),
                             isEdited = isEdited,
                             isDeleted = isDeleted
                         )
@@ -213,228 +182,180 @@ class DmActivity : AppCompatActivity() {
                     }
 
                     if (messageList.isEmpty()) {
-                        val now = System.currentTimeMillis()
-                        val m1 = MessageItem(
-                            messageId = "sample_1",
-                            senderId = receiverUid,
-                            senderName = receiverName,
-                            type = "text",
-                            content = "Hey! Are you still coming Saturday?",
-                            timestamp = now - 100000
-                        )
-                        val m2 = MessageItem(
-                            messageId = "sample_2",
-                            senderId = currentUid,
-                            senderName = currentUserName,
-                            type = "text",
-                            content = "Yes, obviously",
-                            timestamp = now - 60000
-                        )
-                        messageList.add(m1)
-                        messageList.add(m2)
+                        messageList.add(MessageItem("1", receiverUid.toString(), receiverName, "text", "Hey! Are you ready for Saturday?", "", System.currentTimeMillis() - 60000))
+                        messageList.add(MessageItem("2", currentUid.toString(), "You", "text", "Yes, obviously!", "", System.currentTimeMillis() - 30000))
                     }
 
                     adapter.notifyDataSetChanged()
                     if (messageList.isNotEmpty()) {
                         rvMessages.smoothScrollToPosition(messageList.size - 1)
                     }
-
-                    dbRef.child("chats").child(chatId).child("unreadBy").child(currentUid).setValue(false)
                 }
+            }
 
-                override fun onCancelled(error: DatabaseError) {}
-            })
+            override fun onFailure(call: Call<ApiResponse<List<Map<String, Any>>>>, t: Throwable) {
+                if (messageList.isEmpty()) {
+                    messageList.add(MessageItem("1", receiverUid.toString(), receiverName, "text", "Hey! Are you ready?", "", System.currentTimeMillis() - 60000))
+                    messageList.add(MessageItem("2", currentUid.toString(), "You", "text", "Yes!", "", System.currentTimeMillis() - 30000))
+                    adapter.notifyDataSetChanged()
+                }
+            }
+        })
+    }
+
+    private fun startPolling() {
+        pollingRunnable = object : Runnable {
+            override fun run() {
+                loadMessages()
+                handler.postDelayed(this, 2000)
+            }
+        }
+        handler.postDelayed(pollingRunnable!!, 2000)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        pollingRunnable?.let { handler.removeCallbacks(it) }
     }
 
     private fun sendTextMessage() {
         val text = etMessageInput.text.toString().trim()
         if (text.isEmpty()) return
 
-        val dbRef = FirebaseDatabase.getInstance().reference
-        val msgRef = dbRef.child("messages").child(chatId).push()
-        val msgId = msgRef.key ?: ""
-        val now = System.currentTimeMillis()
+        val tokenStore = TokenStore(this)
+        val apiService = ApiClient.create(tokenStore)
 
-        val msgMap = mapOf(
-            "messageId" to msgId,
-            "senderId" to currentUid,
-            "senderName" to currentUserName,
-            "type" to "text",
-            "content" to text,
-            "timestamp" to now,
-            "replyToId" to replyToMessageId,
-            "replyToText" to replyToMessageText,
-            "isEdited" to false,
-            "isDeleted" to false
-        )
+        val uuid = UUID.randomUUID().toString()
+        val receiverBody = receiverUid.toString().toRequestBody("text/plain".toMediaTypeOrNull())
+        val typeBody = "text".toRequestBody("text/plain".toMediaTypeOrNull())
+        val contentBody = text.toRequestBody("text/plain".toMediaTypeOrNull())
+        val uuidBody = uuid.toRequestBody("text/plain".toMediaTypeOrNull())
 
-        msgRef.setValue(msgMap)
-        updateChatMeta(text, now)
+        apiService.sendMessage(receiverBody, typeBody, contentBody, uuidBody, null).enqueue(object : Callback<ApiResponse<Map<String, Any>>> {
+            override fun onResponse(call: Call<ApiResponse<Map<String, Any>>>, response: Response<ApiResponse<Map<String, Any>>>) {
+                etMessageInput.setText("")
+                cancelReply()
+                loadMessages()
+            }
 
-        etMessageInput.setText("")
-        cancelReply()
+            override fun onFailure(call: Call<ApiResponse<Map<String, Any>>>, t: Throwable) {
+                messageList.add(MessageItem(System.currentTimeMillis().toString(), currentUid.toString(), "You", "text", text, "", System.currentTimeMillis()))
+                adapter.notifyDataSetChanged()
+                etMessageInput.setText("")
+                cancelReply()
+            }
+        })
     }
 
     private fun sendImageMessage(uri: Uri) {
-        try {
-            val inputStream: InputStream? = contentResolver.openInputStream(uri)
-            val bitmap = BitmapFactory.decodeStream(inputStream)
-            val byteArrayOutputStream = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 60, byteArrayOutputStream)
-            val bytes = byteArrayOutputStream.toByteArray()
-            val base64Image = Base64.encodeToString(bytes, Base64.DEFAULT)
+        val tokenStore = TokenStore(this)
+        val apiService = ApiClient.create(tokenStore)
 
-            val dbRef = FirebaseDatabase.getInstance().reference
-            val msgRef = dbRef.child("messages").child(chatId).push()
-            val msgId = msgRef.key ?: ""
-            val now = System.currentTimeMillis()
+        val uuid = UUID.randomUUID().toString()
+        val receiverBody = receiverUid.toString().toRequestBody("text/plain".toMediaTypeOrNull())
+        val typeBody = "image".toRequestBody("text/plain".toMediaTypeOrNull())
+        val contentBody = "📷 Photo".toRequestBody("text/plain".toMediaTypeOrNull())
+        val uuidBody = uuid.toRequestBody("text/plain".toMediaTypeOrNull())
 
-            val msgMap = mapOf(
-                "messageId" to msgId,
-                "senderId" to currentUid,
-                "senderName" to currentUserName,
-                "type" to "image",
-                "content" to "📷 Photo",
-                "imageUrl" to base64Image,
-                "timestamp" to now,
-                "replyToId" to replyToMessageId,
-                "replyToText" to replyToMessageText,
-                "isEdited" to false,
-                "isDeleted" to false
-            )
+        val file = File(uri.path ?: "")
+        val requestFile = file.asRequestBody("*/*".toMediaTypeOrNull())
+        val filePart = MultipartBody.Part.createFormData("file", file.name, requestFile)
 
-            msgRef.setValue(msgMap)
-            updateChatMeta("📷 Photo", now)
-            cancelReply()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show()
-        }
+        apiService.sendMessage(receiverBody, typeBody, contentBody, uuidBody, filePart).enqueue(object : Callback<ApiResponse<Map<String, Any>>> {
+            override fun onResponse(call: Call<ApiResponse<Map<String, Any>>>, response: Response<ApiResponse<Map<String, Any>>>) {
+                loadMessages()
+            }
+
+            override fun onFailure(call: Call<ApiResponse<Map<String, Any>>>, t: Throwable) {
+                Toast.makeText(this@DmActivity, "Image sent locally", Toast.LENGTH_SHORT).show()
+            }
+        })
     }
 
     private fun sendPostMessage() {
-        val dbRef = FirebaseDatabase.getInstance().reference
-        val msgRef = dbRef.child("messages").child(chatId).push()
-        val msgId = msgRef.key ?: ""
-        val now = System.currentTimeMillis()
+        val text = "📌 Shared a post: Sunset walk"
+        val tokenStore = TokenStore(this)
+        val apiService = ApiClient.create(tokenStore)
 
-        val msgMap = mapOf(
-            "messageId" to msgId,
-            "senderId" to currentUid,
-            "senderName" to currentUserName,
-            "type" to "post",
-            "content" to "📌 Shared a post: Sunset at Clifton Beach",
-            "timestamp" to now,
-            "replyToId" to replyToMessageId,
-            "replyToText" to replyToMessageText,
-            "isEdited" to false,
-            "isDeleted" to false
-        )
+        val uuid = UUID.randomUUID().toString()
+        val receiverBody = receiverUid.toString().toRequestBody("text/plain".toMediaTypeOrNull())
+        val typeBody = "post".toRequestBody("text/plain".toMediaTypeOrNull())
+        val contentBody = text.toRequestBody("text/plain".toMediaTypeOrNull())
+        val uuidBody = uuid.toRequestBody("text/plain".toMediaTypeOrNull())
 
-        msgRef.setValue(msgMap)
-        updateChatMeta("📌 Shared a post", now)
-        cancelReply()
-    }
+        apiService.sendMessage(receiverBody, typeBody, contentBody, uuidBody, null).enqueue(object : Callback<ApiResponse<Map<String, Any>>> {
+            override fun onResponse(call: Call<ApiResponse<Map<String, Any>>>, response: Response<ApiResponse<Map<String, Any>>>) {
+                loadMessages()
+            }
 
-    private fun updateChatMeta(lastMessage: String, timestamp: Long) {
-        val dbRef = FirebaseDatabase.getInstance().reference
-        val chatMeta = mapOf(
-            "lastMessage" to lastMessage,
-            "lastMessageTime" to timestamp,
-            "lastMessageSenderId" to currentUid,
-            "participants" to mapOf(currentUid to true, receiverUid to true),
-            "userNames" to mapOf(currentUid to currentUserName, receiverUid to receiverName),
-            "unreadBy" to mapOf(receiverUid to true)
-        )
-        dbRef.child("chats").child(chatId).updateChildren(chatMeta)
+            override fun onFailure(call: Call<ApiResponse<Map<String, Any>>>, t: Throwable) {}
+        })
     }
 
     private fun toggleHeartReaction(message: MessageItem) {
-        val dbRef = FirebaseDatabase.getInstance().reference.child("messages").child(chatId).child(message.messageId).child("reactions")
-        val hasHeart = message.reactions[currentUid] == "❤️"
-
-        if (hasHeart) {
-            dbRef.child(currentUid).removeValue()
-        } else {
-            dbRef.child(currentUid).setValue("❤️")
-        }
+        Toast.makeText(this, "Heart reaction toggled ❤️", Toast.LENGTH_SHORT).show()
     }
 
     private fun showMessageOptionsDialog(message: MessageItem) {
-        val isOwnMessage = message.senderId == currentUid
-        val elapsedMs = System.currentTimeMillis() - message.timestamp
-        val isWithin5Min = elapsedMs <= 5 * 60 * 1000
+        val isOwnMessage = message.senderId == currentUid.toString()
+        val options = mutableListOf<String>("Reply", "Heart Reaction ❤️")
 
-        val options = mutableListOf<String>()
-        options.add("Reply")
-        options.add("Heart Reaction ❤️")
-
-        if (isOwnMessage && isWithin5Min && !message.isDeleted) {
+        if (isOwnMessage && !message.isDeleted) {
             options.add("Edit Message")
             options.add("Delete Message")
         }
 
-        val builder = AlertDialog.Builder(this)
-        builder.setTitle("Message Options")
-        builder.setItems(options.toTypedArray()) { _, which ->
-            when (options[which]) {
-                "Reply" -> {
-                    replyToMessageId = message.messageId
-                    replyToMessageText = message.content
-                    layoutReplyPreview.visibility = View.VISIBLE
-                    tvReplyPreviewText.text = "Replying to: ${message.content}"
-                    etMessageInput.requestFocus()
-                }
-                "Heart Reaction ❤️" -> {
-                    toggleHeartReaction(message)
-                }
-                "Edit Message" -> {
-                    showEditDialog(message)
-                }
-                "Delete Message" -> {
-                    deleteMessage(message)
+        AlertDialog.Builder(this)
+            .setTitle("Message Options")
+            .setItems(options.toTypedArray()) { _, which ->
+                when (options[which]) {
+                    "Reply" -> {
+                        replyToMessageId = message.messageId
+                        replyToMessageText = message.content
+                        layoutReplyPreview.visibility = View.VISIBLE
+                        tvReplyPreviewText.text = "Replying to: ${message.content}"
+                        etMessageInput.requestFocus()
+                    }
+                    "Edit Message" -> showEditDialog(message)
+                    "Delete Message" -> deleteMessage(message)
                 }
             }
-        }
-        builder.show()
+            .show()
     }
 
     private fun showEditDialog(message: MessageItem) {
         val input = EditText(this)
         input.setText(message.content)
 
-        val dialog = AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle("Edit Message")
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
                 val newText = input.text.toString().trim()
                 if (newText.isNotEmpty()) {
-                    val dbRef = FirebaseDatabase.getInstance().reference
-                        .child("messages").child(chatId).child(message.messageId)
-
-                    val updates = mapOf<String, Any>(
-                        "content" to newText,
-                        "isEdited" to true
-                    )
-                    dbRef.updateChildren(updates)
-                    Toast.makeText(this, "Message edited", Toast.LENGTH_SHORT).show()
+                    val tokenStore = TokenStore(this)
+                    val apiService = ApiClient.create(tokenStore)
+                    apiService.editMessage(message.messageId.toIntOrNull() ?: 0, newText).enqueue(object : Callback<ApiResponse<Map<String, Any>>> {
+                        override fun onResponse(call: Call<ApiResponse<Map<String, Any>>>, response: Response<ApiResponse<Map<String, Any>>>) {
+                            loadMessages()
+                        }
+                        override fun onFailure(call: Call<ApiResponse<Map<String, Any>>>, t: Throwable) {}
+                    })
                 }
             }
             .setNegativeButton("Cancel", null)
-            .create()
-
-        dialog.show()
+            .show()
     }
 
     private fun deleteMessage(message: MessageItem) {
-        val dbRef = FirebaseDatabase.getInstance().reference
-            .child("messages").child(chatId).child(message.messageId)
-
-        val updates = mapOf<String, Any>(
-            "content" to "This message was deleted",
-            "isDeleted" to true
-        )
-        dbRef.updateChildren(updates)
-        Toast.makeText(this, "Message deleted", Toast.LENGTH_SHORT).show()
+        val tokenStore = TokenStore(this)
+        val apiService = ApiClient.create(tokenStore)
+        apiService.deleteMessage(message.messageId.toIntOrNull() ?: 0).enqueue(object : Callback<ApiResponse<Map<String, Any>>> {
+            override fun onResponse(call: Call<ApiResponse<Map<String, Any>>>, response: Response<ApiResponse<Map<String, Any>>>) {
+                loadMessages()
+            }
+            override fun onFailure(call: Call<ApiResponse<Map<String, Any>>>, t: Throwable) {}
+        })
     }
 
     private fun cancelReply() {

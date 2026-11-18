@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(80) NOT NULL,
   username VARCHAR(40) UNIQUE NULL,
   email VARCHAR(120) UNIQUE NOT NULL,
+  phone_number VARCHAR(16) UNIQUE NULL,
   password_hash VARCHAR(255) NOT NULL,
   bio VARCHAR(255) DEFAULT '',
   profile_pic VARCHAR(255) NULL,

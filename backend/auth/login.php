@@ -2,16 +2,16 @@
 require_once __DIR__ . '/../common.php';
 
 $in = body();
-$email = trim($in['email'] ?? '');
+$identifier = trim($in['identifier'] ?? $in['email'] ?? '');
 $password = $in['password'] ?? '';
 
-if (empty($email) || empty($password)) {
-    fail('Email and password are required');
+if ($identifier === '' || $password === '') {
+    fail('Email or phone number and password are required');
 }
 
 $conn = db();
-$st = $conn->prepare('SELECT id, password_hash, profile_complete, name, username FROM users WHERE email=?');
-$st->execute([$email]);
+$st = $conn->prepare('SELECT id, password_hash, profile_complete, name, username FROM users WHERE email=? OR phone_number=?');
+$st->execute([$identifier, $identifier]);
 $user = $st->fetch();
 
 if (!$user || !password_verify($password, $user['password_hash'])) {

@@ -7,21 +7,15 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 
 class LoginActivity : AppCompatActivity() {
-
-    private lateinit var auth: FirebaseAuth
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.login)
-
-        auth = FirebaseAuth.getInstance()
 
         val etEmail = findViewById<EditText>(R.id.etEmail)
         val etPassword = findViewById<EditText>(R.id.etPassword)
@@ -50,63 +44,51 @@ class LoginActivity : AppCompatActivity() {
         }
 
         findViewById<View>(R.id.btnLogin)?.setOnClickListener {
-            val email = etEmail?.text?.toString()?.trim() ?: ""
+            val identifier = etEmail?.text?.toString()?.trim() ?: ""
             val pass = etPassword?.text?.toString()?.trim() ?: ""
 
-            if (email.isEmpty() || pass.isEmpty()) {
-                Toast.makeText(this, "Please enter email and password", Toast.LENGTH_SHORT).show()
+            if (identifier.isEmpty() || pass.isEmpty()) {
+                Toast.makeText(this, "Please enter email or phone number and password", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            auth.signInWithEmailAndPassword(email, pass)
-                .addOnCompleteListener(this) { task ->
-                    if (task.isSuccessful) {
-                        val uid = auth.currentUser?.uid ?: ""
-                        val dbRef = FirebaseDatabase.getInstance().reference
+            val tokenStore = TokenStore(this)
+            val apiService = ApiClient.create(tokenStore)
 
-                        // Mark user online in Realtime Database
-                        if (uid.isNotEmpty()) {
-                            dbRef.child("users").child(uid).child("status").setValue("online")
-                        }
+            apiService.login(identifier, pass).enqueue(object : Callback<ApiResponse<Map<String, Any>>> {
+                override fun onResponse(
+                    call: Call<ApiResponse<Map<String, Any>>>,
+                    response: Response<ApiResponse<Map<String, Any>>>
+                ) {
+                    val body = response.body()
+                    if (response.isSuccessful && body != null && body.ok && body.data != null) {
+                        val token = body.data["token"] as? String ?: ""
+                        val userId = (body.data["user_id"] as? Number)?.toInt() ?: 1
+                        val profileComplete = (body.data["profile_complete"] as? Number)?.toInt() ?: 0
+
+                        tokenStore.save(token, userId)
 
                         prefs.edit()
                             .putBoolean("is_logged_in", true)
-                            .putString("last_email", email)
+                            .putString("last_email", identifier)
                             .apply()
 
-                        // Check if user has setup profile (username/bio)
-                        if (uid.isNotEmpty()) {
-                            dbRef.child("users").child(uid)
-                                .addListenerForSingleValueEvent(object : ValueEventListener {
-                                    override fun onDataChange(snapshot: DataSnapshot) {
-                                        val isFirstTime = snapshot.child("isFirstTime").getValue(Boolean::class.java) ?: false
-                                        val username = snapshot.child("username").getValue(String::class.java) ?: ""
-
-                                        if (isFirstTime || username.isEmpty()) {
-                                            startActivity(Intent(this@LoginActivity, EditProfileActivity::class.java))
-                                        } else {
-                                            startActivity(Intent(this@LoginActivity, FeedActivity::class.java))
-                                        }
-                                        finish()
-                                    }
-
-                                    override fun onCancelled(error: DatabaseError) {
-                                        startActivity(Intent(this@LoginActivity, FeedActivity::class.java))
-                                        finish()
-                                    }
-                                })
+                        val intent = if (profileComplete == 0) {
+                            Intent(this@LoginActivity, EditProfileActivity::class.java)
                         } else {
-                            startActivity(Intent(this, FeedActivity::class.java))
-                            finish()
+                            Intent(this@LoginActivity, FeedActivity::class.java)
                         }
+                        startActivity(intent)
+                        finish()
                     } else {
-                        Toast.makeText(
-                            this,
-                            "Login failed: ${task.exception?.message}",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        Toast.makeText(this@LoginActivity, "Login failed: ${apiErrorMessage(response, "Request failed (${response.code()})")}", Toast.LENGTH_LONG).show()
                     }
                 }
+
+                override fun onFailure(call: Call<ApiResponse<Map<String, Any>>>, t: Throwable) {
+                    Toast.makeText(this@LoginActivity, "Could not connect to server: ${t.localizedMessage ?: "network error"}", Toast.LENGTH_LONG).show()
+                }
+            })
         }
 
         findViewById<View>(R.id.btnCreateAccount)?.setOnClickListener {

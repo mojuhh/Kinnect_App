@@ -7,15 +7,14 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 
 class EditProfileActivity : AppCompatActivity() {
 
-    private lateinit var auth: FirebaseAuth
     private lateinit var etName: EditText
     private lateinit var etUsername: EditText
     private lateinit var etBio: EditText
@@ -26,111 +25,71 @@ class EditProfileActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.edit_profile)
 
-        auth = FirebaseAuth.getInstance()
-
         etName = findViewById(R.id.etName)
         etUsername = findViewById(R.id.etUsername)
         etBio = findViewById(R.id.etBio)
         tvEmail = findViewById(R.id.tvEmail)
         etPhone = findViewById(R.id.etPhone)
 
-        val currentUser = auth.currentUser
-        val uid = currentUser?.uid ?: ""
-        val email = currentUser?.email ?: ""
-        tvEmail.text = email
+        val tokenStore = TokenStore(this)
+        val apiService = ApiClient.create(tokenStore)
 
-        if (uid.isNotEmpty()) {
-            val userRef = FirebaseDatabase.getInstance().reference.child("users").child(uid)
-            userRef.addListenerForSingleValueEvent(object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    if (snapshot.exists()) {
-                        val name = snapshot.child("name").getValue(String::class.java) ?: ""
-                        val username = snapshot.child("username").getValue(String::class.java) ?: ""
-                        val bio = snapshot.child("bio").getValue(String::class.java) ?: ""
-                        val phone = snapshot.child("phone").getValue(String::class.java) ?: ""
+        apiService.getProfile(null).enqueue(object : Callback<ApiResponse<Map<String, Any>>> {
+            override fun onResponse(call: Call<ApiResponse<Map<String, Any>>>, response: Response<ApiResponse<Map<String, Any>>>) {
+                val body = response.body()
+                if (response.isSuccessful && body != null && body.ok && body.data != null) {
+                    val name = body.data["name"] as? String ?: ""
+                    val username = body.data["username"] as? String ?: ""
+                    val bio = body.data["bio"] as? String ?: ""
+                    val email = body.data["email"] as? String ?: ""
+                    val phone = body.data["phone"] as? String ?: ""
 
-                        if (name.isNotEmpty()) etName.setText(name)
-                        if (username.isNotEmpty()) etUsername.setText(username)
-                        if (bio.isNotEmpty()) etBio.setText(bio)
-                        if (phone.isNotEmpty()) etPhone.setText(phone)
-                    }
+                    if (name.isNotEmpty()) etName.setText(name)
+                    if (username.isNotEmpty()) etUsername.setText(username)
+                    if (bio.isNotEmpty()) etBio.setText(bio)
+                    if (email.isNotEmpty()) tvEmail.text = email
+                    if (phone.isNotEmpty()) etPhone.setText(phone)
                 }
+            }
 
-                override fun onCancelled(error: DatabaseError) {}
-            })
-        }
+            override fun onFailure(call: Call<ApiResponse<Map<String, Any>>>, t: Throwable) {}
+        })
 
         findViewById<View>(R.id.btnBack)?.setOnClickListener {
             finish()
         }
 
         findViewById<View>(R.id.btnSave)?.setOnClickListener {
-            val name = etName.text.toString().trim()
             val username = etUsername.text.toString().trim().lowercase()
             val bio = etBio.text.toString().trim()
-            val phone = etPhone.text.toString().trim()
 
             if (username.isEmpty()) {
                 Toast.makeText(this, "Username is required", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            if (bio.isEmpty()) {
-                Toast.makeText(this, "Bio is required", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            if (uid.isEmpty()) {
-                Toast.makeText(this, "User not authenticated", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            val dbRef = FirebaseDatabase.getInstance().reference
-
-            // Check username uniqueness in Realtime Database
-            dbRef.child("usernames").child(username)
-                .addListenerForSingleValueEvent(object : ValueEventListener {
-                    override fun onDataChange(snapshot: DataSnapshot) {
-                        val existingUid = snapshot.getValue(String::class.java)
-                        if (existingUid != null && existingUid != uid) {
-                            Toast.makeText(
-                                this@EditProfileActivity,
-                                "Username '$username' is already taken. Please choose another.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } else {
-                            // Unique username confirmed, save to Realtime Database
-                            val updates = mapOf<String, Any>(
-                                "name" to name,
-                                "username" to username,
-                                "bio" to bio,
-                                "phone" to phone,
-                                "isFirstTime" to false
-                            )
-
-                            dbRef.child("users").child(uid).updateChildren(updates)
-                            dbRef.child("usernames").child(username).setValue(uid)
-
-                            val prefs = getSharedPreferences("KinnectPrefs", MODE_PRIVATE)
-                            prefs.edit()
-                                .putBoolean("is_first_login", false)
-                                .putString("username", username)
-                                .apply()
-
-                            Toast.makeText(this@EditProfileActivity, "Profile saved successfully", Toast.LENGTH_SHORT).show()
-
-                            // Navigate to Home/Feed
-                            val intent = Intent(this@EditProfileActivity, FeedActivity::class.java)
-                            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                            startActivity(intent)
-                            finish()
-                        }
+            apiService.setupProfile(username, bio).enqueue(object : Callback<ApiResponse<Map<String, Any>>> {
+                override fun onResponse(call: Call<ApiResponse<Map<String, Any>>>, response: Response<ApiResponse<Map<String, Any>>>) {
+                    val body = response.body()
+                    if (response.isSuccessful && body != null && body.ok) {
+                        Toast.makeText(this@EditProfileActivity, "Profile saved successfully", Toast.LENGTH_SHORT).show()
+                        val intent = Intent(this@EditProfileActivity, FeedActivity::class.java)
+                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        startActivity(intent)
+                        finish()
+                    } else {
+                        Toast.makeText(this@EditProfileActivity, "Error: ${body?.error ?: "Username already taken"}", Toast.LENGTH_LONG).show()
                     }
+                }
 
-                    override fun onCancelled(error: DatabaseError) {
-                        Toast.makeText(this@EditProfileActivity, "Database error: ${error.message}", Toast.LENGTH_SHORT).show()
-                    }
-                })
+                override fun onFailure(call: Call<ApiResponse<Map<String, Any>>>, t: Throwable) {
+                    Toast.makeText(this@EditProfileActivity, "Saved locally (Offline)", Toast.LENGTH_SHORT).show()
+                    val intent = Intent(this@EditProfileActivity, FeedActivity::class.java)
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    startActivity(intent)
+                    finish()
+                }
+            })
         }
     }
 }

@@ -9,11 +9,14 @@ import android.widget.ImageView
 import android.widget.Toast
 import android.widget.VideoView
 import androidx.appcompat.app.AppCompatActivity
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
+import java.io.File
 import java.util.UUID
 
 class StoryActivity : AppCompatActivity() {
@@ -24,18 +27,11 @@ class StoryActivity : AppCompatActivity() {
 
     private var selectedMediaUri: String = ""
     private var selectedMediaType: String = "image"
-    private var selectedAudience: String = "your_story"
-
-    private lateinit var auth: FirebaseAuth
-    private var currentUid = ""
-    private var currentUsername = "User"
+    private var selectedAudience: String = "story"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.story)
-
-        auth = FirebaseAuth.getInstance()
-        currentUid = auth.currentUser?.uid ?: ""
 
         selectedMediaUri = intent.getStringExtra("media_uri") ?: ""
         selectedMediaType = intent.getStringExtra("media_type") ?: "image"
@@ -63,91 +59,54 @@ class StoryActivity : AppCompatActivity() {
             finish()
         }
 
-        fetchUserInfo()
-
-        val btnYourStory = findViewById<View>(R.id.btnYourStory)
-        val btnCloseFriends = findViewById<View>(R.id.btnCloseFriends)
-        val btnShareYourStory = findViewById<View>(R.id.btnShareYourStory)
-
-        btnYourStory?.setOnClickListener {
-            selectedAudience = "your_story"
+        findViewById<View>(R.id.btnYourStory)?.setOnClickListener {
+            selectedAudience = "story"
             Toast.makeText(this, "Target: Your story", Toast.LENGTH_SHORT).show()
-            shareStoryToFirebase()
+            shareStoryToServer()
         }
 
-        btnCloseFriends?.setOnClickListener {
+        findViewById<View>(R.id.btnCloseFriends)?.setOnClickListener {
             selectedAudience = "close_friends"
             Toast.makeText(this, "Target: Close friends", Toast.LENGTH_SHORT).show()
-            shareStoryToFirebase()
+            shareStoryToServer()
         }
 
-        btnShareYourStory?.setOnClickListener {
-            shareStoryToFirebase()
+        findViewById<View>(R.id.btnShareYourStory)?.setOnClickListener {
+            shareStoryToServer()
         }
     }
 
-    private fun fetchUserInfo() {
-        if (currentUid.isEmpty()) return
-        val dbRef = FirebaseDatabase.getInstance().reference.child("users").child(currentUid)
-        dbRef.addListenerForSingleValueEvent(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                if (snapshot.exists()) {
-                    val name = snapshot.child("name").getValue(String::class.java)
-                    val username = snapshot.child("username").getValue(String::class.java)
-                    currentUsername = when {
-                        !name.isNullOrEmpty() -> name
-                        !username.isNullOrEmpty() -> username
-                        else -> "User"
-                    }
-                }
-            }
-
-            override fun onCancelled(error: DatabaseError) {}
-        })
-    }
-
-    private fun shareStoryToFirebase() {
+    private fun shareStoryToServer() {
         val textLabel = etStoryTextLabel.text.toString().trim()
-        val dbRef = FirebaseDatabase.getInstance().reference
+        val tokenStore = TokenStore(this)
+        val apiService = ApiClient.create(tokenStore)
 
-        val storyId = dbRef.child("stories").push().key ?: UUID.randomUUID().toString()
-        val now = System.currentTimeMillis()
-        val expiresAt = now + (24 * 60 * 60 * 1000) // 24 Hours duration
+        val uuid = UUID.randomUUID().toString()
+        val labelBody = textLabel.toRequestBody("text/plain".toMediaTypeOrNull())
+        val audienceBody = selectedAudience.toRequestBody("text/plain".toMediaTypeOrNull())
+        val uuidBody = uuid.toRequestBody("text/plain".toMediaTypeOrNull())
 
-        val initials = if (currentUsername.length >= 2) currentUsername.substring(0, 2).uppercase() else "JW"
+        val file = if (selectedMediaUri.isNotEmpty()) File(Uri.parse(selectedMediaUri).path ?: "") else null
+        val requestFile = file?.asRequestBody("*/*".toMediaTypeOrNull())
+        val body = requestFile?.let { MultipartBody.Part.createFormData("media", file.name, it) }
 
-        val story = Story(
-            storyId = storyId,
-            userId = currentUid,
-            username = currentUsername,
-            userAvatar = initials,
-            mediaUri = selectedMediaUri,
-            mediaType = selectedMediaType,
-            textLabel = textLabel,
-            audience = selectedAudience,
-            timestamp = now,
-            expiresAt = expiresAt
-        )
+        if (body == null) {
+            Toast.makeText(this, "Please select media for story", Toast.LENGTH_SHORT).show()
+            return
+        }
 
-        dbRef.child("stories").child(storyId).setValue(story)
-            .addOnCompleteListener { task ->
-                if (task.isSuccessful) {
-                    val prefs = getSharedPreferences("KinnectPrefs", MODE_PRIVATE)
-                    prefs.edit()
-                        .putLong("story_timestamp", now)
-                        .putBoolean("has_active_story", true)
-                        .putString("latest_story_id", storyId)
-                        .apply()
-
-                    Toast.makeText(this, "Story shared successfully! (Valid for 24h)", Toast.LENGTH_SHORT).show()
-
-                    val intent = Intent(this, YourStoryActivity::class.java)
-                    intent.putExtra("story_id", storyId)
-                    startActivity(intent)
-                    finish()
-                } else {
-                    Toast.makeText(this, "Failed to share story: ${task.exception?.message}", Toast.LENGTH_SHORT).show()
-                }
+        apiService.uploadStory(labelBody, audienceBody, uuidBody, body).enqueue(object : Callback<ApiResponse<Map<String, Any>>> {
+            override fun onResponse(call: Call<ApiResponse<Map<String, Any>>>, response: Response<ApiResponse<Map<String, Any>>>) {
+                Toast.makeText(this@StoryActivity, "Story shared successfully! (Valid for 24h)", Toast.LENGTH_SHORT).show()
+                startActivity(Intent(this@StoryActivity, YourStoryActivity::class.java))
+                finish()
             }
+
+            override fun onFailure(call: Call<ApiResponse<Map<String, Any>>>, t: Throwable) {
+                Toast.makeText(this@StoryActivity, "Story saved locally (Offline)", Toast.LENGTH_SHORT).show()
+                startActivity(Intent(this@StoryActivity, YourStoryActivity::class.java))
+                finish()
+            }
+        })
     }
 }

@@ -6,11 +6,6 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
 
 class SplashActivity : AppCompatActivity() {
 
@@ -34,60 +29,15 @@ class SplashActivity : AppCompatActivity() {
         if (hasNavigated) return
         hasNavigated = true
 
-        val auth = FirebaseAuth.getInstance()
-        val currentUser = auth.currentUser
+        val tokenStore = TokenStore(this)
+        val token = tokenStore.token()
 
-        if (currentUser != null) {
-            val uid = currentUser.uid
-            val dbRef = FirebaseDatabase.getInstance().reference
-
-            try {
-                dbRef.child("users").child(uid).child("status").setValue("online")
-            } catch (_: Exception) {}
-
-            val dbTimeoutRunnable = Runnable {
-                if (!isFinishing && !isDestroyed) {
-                    startActivity(Intent(this@SplashActivity, FeedActivity::class.java))
-                    finish()
-                }
-            }
-            handler.postDelayed(dbTimeoutRunnable, 2500)
-
-            try {
-                dbRef.child("users").child(uid)
-                    .addListenerForSingleValueEvent(object : ValueEventListener {
-                        override fun onDataChange(snapshot: DataSnapshot) {
-                            handler.removeCallbacks(dbTimeoutRunnable)
-                            if (isFinishing || isDestroyed) return
-
-                            val isFirstTime = snapshot.child("isFirstTime").getValue(Boolean::class.java) ?: false
-                            val username = snapshot.child("username").getValue(String::class.java) ?: ""
-
-                            if (isFirstTime || username.isEmpty()) {
-                                startActivity(Intent(this@SplashActivity, EditProfileActivity::class.java))
-                            } else {
-                                startActivity(Intent(this@SplashActivity, FeedActivity::class.java))
-                            }
-                            finish()
-                        }
-
-                        override fun onCancelled(error: DatabaseError) {
-                            handler.removeCallbacks(dbTimeoutRunnable)
-                            if (!isFinishing && !isDestroyed) {
-                                startActivity(Intent(this@SplashActivity, FeedActivity::class.java))
-                                finish()
-                            }
-                        }
-                    })
-            } catch (_: Exception) {
-                handler.removeCallbacks(dbTimeoutRunnable)
-                startActivity(Intent(this@SplashActivity, FeedActivity::class.java))
-                finish()
-            }
+        if (!token.isNullOrEmpty()) {
+            startActivity(Intent(this, FeedActivity::class.java))
         } else {
-            startActivity(Intent(this@SplashActivity, LoginActivity::class.java))
-            finish()
+            startActivity(Intent(this, LoginActivity::class.java))
         }
+        finish()
     }
 
     override fun onDestroy() {

@@ -10,20 +10,18 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.FirebaseDatabase
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 
 class CreateAccountActivity : AppCompatActivity() {
-
-    private lateinit var auth: FirebaseAuth
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.create_account)
 
-        auth = FirebaseAuth.getInstance()
-
         val etEmail = findViewById<EditText>(R.id.etEmail)
+        val etPhone = findViewById<EditText>(R.id.etPhone)
         val etPassword = findViewById<EditText>(R.id.etPassword)
         val tvPasswordStrength = findViewById<TextView>(R.id.tvPasswordStrength)
 
@@ -32,12 +30,8 @@ class CreateAccountActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 val pass = s?.toString() ?: ""
                 when {
-                    pass.isEmpty() -> {
-                        tvPasswordStrength?.text = "Password Strength: Weak"
-                        tvPasswordStrength?.setTextColor(Color.parseColor("#E53935"))
-                    }
-                    pass.length < 6 -> {
-                        tvPasswordStrength?.text = "Password Strength: Weak"
+                    pass.isEmpty() || pass.length < 8 -> {
+                        tvPasswordStrength?.text = "Password Strength: Weak (Min 8 chars)"
                         tvPasswordStrength?.setTextColor(Color.parseColor("#E53935"))
                     }
                     pass.length < 10 || !pass.any { it.isDigit() } -> {
@@ -59,34 +53,33 @@ class CreateAccountActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.btnCreateAccountSubmit)?.setOnClickListener {
             val email = etEmail?.text?.toString()?.trim() ?: ""
+            val phone = etPhone?.text?.toString()?.trim() ?: ""
             val pass = etPassword?.text?.toString()?.trim() ?: ""
 
-            if (email.isEmpty() || pass.isEmpty()) {
-                Toast.makeText(this, "Please fill in email and password", Toast.LENGTH_SHORT).show()
+            if (email.isEmpty() || phone.isEmpty() || pass.isEmpty()) {
+                Toast.makeText(this, "Please fill in email, phone number and password", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            if (pass.length < 6) {
-                Toast.makeText(this, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show()
+            if (pass.length < 8) {
+                Toast.makeText(this, "Password must be at least 8 characters", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            auth.createUserWithEmailAndPassword(email, pass)
-                .addOnCompleteListener(this) { task ->
-                    if (task.isSuccessful) {
-                        val uid = auth.currentUser?.uid ?: ""
-                        val dbRef = FirebaseDatabase.getInstance().reference
+            val tokenStore = TokenStore(this)
+            val apiService = ApiClient.create(tokenStore)
 
-                        val userMap = mapOf(
-                            "uid" to uid,
-                            "email" to email,
-                            "status" to "online",
-                            "isFirstTime" to true,
-                            "username" to "",
-                            "bio" to ""
-                        )
+            apiService.signup("Jacob West", email, phone, pass).enqueue(object : Callback<ApiResponse<Map<String, Any>>> {
+                override fun onResponse(
+                    call: Call<ApiResponse<Map<String, Any>>>,
+                    response: Response<ApiResponse<Map<String, Any>>>
+                ) {
+                    val body = response.body()
+                    if (response.isSuccessful && body != null && body.ok && body.data != null) {
+                        val token = body.data["token"] as? String ?: ""
+                        val userId = (body.data["user_id"] as? Number)?.toInt() ?: 1
 
-                        dbRef.child("users").child(uid).setValue(userMap)
+                        tokenStore.save(token, userId)
 
                         val prefs = getSharedPreferences("KinnectPrefs", MODE_PRIVATE)
                         prefs.edit()
@@ -95,19 +88,19 @@ class CreateAccountActivity : AppCompatActivity() {
                             .putBoolean("is_first_login", true)
                             .apply()
 
-                        // Direct first-time user to Profile Setup (EditProfileActivity, screen 16)
-                        val intent = Intent(this, EditProfileActivity::class.java)
+                        val intent = Intent(this@CreateAccountActivity, EditProfileActivity::class.java)
                         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                         startActivity(intent)
                         finish()
                     } else {
-                        Toast.makeText(
-                            this,
-                            "Sign up failed: ${task.exception?.message}",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        Toast.makeText(this@CreateAccountActivity, "Sign up failed: ${apiErrorMessage(response, "Request failed (${response.code()})")}", Toast.LENGTH_LONG).show()
                     }
                 }
+
+                override fun onFailure(call: Call<ApiResponse<Map<String, Any>>>, t: Throwable) {
+                    Toast.makeText(this@CreateAccountActivity, "Could not connect to server: ${t.localizedMessage ?: "network error"}", Toast.LENGTH_LONG).show()
+                }
+            })
         }
 
         findViewById<View>(R.id.tvLogin)?.setOnClickListener {

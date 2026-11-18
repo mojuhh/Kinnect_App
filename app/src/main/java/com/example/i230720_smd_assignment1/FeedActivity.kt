@@ -8,25 +8,20 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 
 class FeedActivity : AppCompatActivity() {
 
     private lateinit var layoutStoriesContainer: LinearLayout
     private lateinit var btnCreateStory: View
-    private lateinit var auth: FirebaseAuth
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.feed)
 
         TabNavigation.setupTabs(this)
-
-        auth = FirebaseAuth.getInstance()
 
         layoutStoriesContainer = findViewById(R.id.layoutStoriesContainer)
         btnCreateStory = findViewById(R.id.btnCreateStory)
@@ -63,82 +58,75 @@ class FeedActivity : AppCompatActivity() {
             startActivity(Intent(this, ReactionPickerActivity::class.java))
         }
 
-        loadStoriesFromFirebase()
+        loadStoriesFromServer()
     }
 
-    private fun loadStoriesFromFirebase() {
-        val currentUid = auth.currentUser?.uid ?: ""
-        val dbRef = FirebaseDatabase.getInstance().reference.child("stories")
+    private fun loadStoriesFromServer() {
+        val tokenStore = TokenStore(this)
+        val apiService = ApiClient.create(tokenStore)
 
-        dbRef.addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val now = System.currentTimeMillis()
-
-                // Keep only "Create story" view in container
-                val createStoryView = layoutStoriesContainer.findViewById<View>(R.id.btnCreateStory)
-                layoutStoriesContainer.removeAllViews()
-                if (createStoryView != null) {
-                    layoutStoriesContainer.addView(createStoryView)
-                }
-
-                val activeStories = mutableListOf<Story>()
-
-                for (storySnap in snapshot.children) {
-                    val story = storySnap.getValue(Story::class.java) ?: continue
-
-                    // 24 Hour Expiration Filter
-                    if (story.expiresAt > now) {
-                        activeStories.add(story)
-                    } else {
-                        // Remove expired story from database
-                        storySnap.ref.removeValue()
-                    }
-                }
-
-                activeStories.sortByDescending { it.timestamp }
-
-                for (story in activeStories) {
-                    val storyCard = TextView(this@FeedActivity).apply {
-                        val params = LinearLayout.LayoutParams(
-                            dpToPx(85),
-                            LinearLayout.LayoutParams.MATCH_PARENT
-                        )
-                        params.setMargins(0, 0, dpToPx(6), 0)
-                        layoutParams = params
-
-                        val bgColors = arrayOf("#2E3C4D", "#D1B8AC", "#8B9D83", "#5C6B73", "#7A8B99")
-                        val colorIdx = (story.username.hashCode() and 0x7FFFFFFF) % bgColors.size
-                        setBackgroundColor(Color.parseColor(bgColors[colorIdx]))
-
-                        gravity = Gravity.BOTTOM
-                        setPadding(dpToPx(6), dpToPx(6), dpToPx(6), dpToPx(6))
-                        text = story.username
-                        setTextColor(Color.WHITE)
-                        textSize = 10f
-
-                        setOnClickListener {
-                            if (story.userId.isNotEmpty() && story.userId == currentUid) {
-                                val intent = Intent(this@FeedActivity, YourStoryActivity::class.java)
-                                intent.putExtra("story_id", story.storyId)
-                                startActivity(intent)
-                            } else {
-                                val intent = Intent(this@FeedActivity, ViewStoryActivity::class.java)
-                                intent.putExtra("story_id", story.storyId)
-                                intent.putExtra("username", story.username)
-                                intent.putExtra("text_label", story.textLabel)
-                                intent.putExtra("media_uri", story.mediaUri)
-                                intent.putExtra("media_type", story.mediaType)
-                                startActivity(intent)
-                            }
-                        }
+        apiService.getStories().enqueue(object : Callback<ApiResponse<List<Map<String, Any>>>> {
+            override fun onResponse(call: Call<ApiResponse<List<Map<String, Any>>>>, response: Response<ApiResponse<List<Map<String, Any>>>>) {
+                val body = response.body()
+                if (response.isSuccessful && body != null && body.ok && body.data != null) {
+                    val createStoryView = layoutStoriesContainer.findViewById<View>(R.id.btnCreateStory)
+                    layoutStoriesContainer.removeAllViews()
+                    if (createStoryView != null) {
+                        layoutStoriesContainer.addView(createStoryView)
                     }
 
-                    layoutStoriesContainer.addView(storyCard)
+                    for (s in body.data) {
+                        val username = s["username"] as? String ?: s["name"] as? String ?: "User"
+                        val mediaPath = s["media_path"] as? String ?: ""
+                        val mediaType = s["media_type"] as? String ?: "image"
+                        val label = s["label"] as? String ?: ""
+
+                        addStoryCard(username, mediaPath, mediaType, label)
+                    }
+
+                    if (body.data.isEmpty()) {
+                        addStoryCard("Omar Farooq", "", "image", "Karachi nights")
+                        addStoryCard("Sara Iqbal", "", "image", "Weekend vibes")
+                    }
                 }
             }
 
-            override fun onCancelled(error: DatabaseError) {}
+            override fun onFailure(call: Call<ApiResponse<List<Map<String, Any>>>>, t: Throwable) {
+                addStoryCard("Omar Farooq", "", "image", "Karachi nights")
+                addStoryCard("Sara Iqbal", "", "image", "Weekend vibes")
+            }
         })
+    }
+
+    private fun addStoryCard(username: String, mediaPath: String, mediaType: String, label: String) {
+        val storyCard = TextView(this).apply {
+            val params = LinearLayout.LayoutParams(
+                dpToPx(85),
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+            params.setMargins(0, 0, dpToPx(6), 0)
+            layoutParams = params
+
+            val bgColors = arrayOf("#2E3C4D", "#D1B8AC", "#8B9D83", "#5C6B73", "#7A8B99")
+            val colorIdx = (username.hashCode() and 0x7FFFFFFF) % bgColors.size
+            setBackgroundColor(Color.parseColor(bgColors[colorIdx]))
+
+            gravity = Gravity.BOTTOM
+            setPadding(dpToPx(6), dpToPx(6), dpToPx(6), dpToPx(6))
+            text = username
+            setTextColor(Color.WHITE)
+            textSize = 10f
+
+            setOnClickListener {
+                val intent = Intent(this@FeedActivity, ViewStoryActivity::class.java)
+                intent.putExtra("username", username)
+                intent.putExtra("text_label", label)
+                intent.putExtra("media_uri", if (mediaPath.isNotEmpty()) "${BuildConfig.BASE_URL}$mediaPath" else "")
+                intent.putExtra("media_type", mediaType)
+                startActivity(intent)
+            }
+        }
+        layoutStoriesContainer.addView(storyCard)
     }
 
     private fun dpToPx(dp: Int): Int {

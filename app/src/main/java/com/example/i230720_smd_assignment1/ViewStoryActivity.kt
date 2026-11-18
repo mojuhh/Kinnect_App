@@ -9,10 +9,6 @@ import android.widget.TextView
 import android.widget.Toast
 import android.widget.VideoView
 import androidx.appcompat.app.AppCompatActivity
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
 
 class ViewStoryActivity : AppCompatActivity() {
 
@@ -38,18 +34,13 @@ class ViewStoryActivity : AppCompatActivity() {
             finish()
         }
 
-        val storyId = intent.getStringExtra("story_id") ?: ""
         val username = intent.getStringExtra("username") ?: "Omar Farooq"
         val textLabel = intent.getStringExtra("text_label") ?: "Karachi nights"
         val mediaUri = intent.getStringExtra("media_uri") ?: ""
         val mediaType = intent.getStringExtra("media_type") ?: "image"
         val timeAgo = intent.getStringExtra("time_ago") ?: "5h"
 
-        if (storyId.isNotEmpty()) {
-            loadStoryFromFirebase(storyId)
-        } else {
-            bindStoryData(username, timeAgo, textLabel, mediaUri, mediaType)
-        }
+        bindStoryData(username, timeAgo, textLabel, mediaUri, mediaType)
 
         findViewById<View>(R.id.btnReactionLike)?.setOnClickListener {
             Toast.makeText(this, "Liked story!", Toast.LENGTH_SHORT).show()
@@ -62,23 +53,6 @@ class ViewStoryActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnReactionHaha)?.setOnClickListener {
             Toast.makeText(this, "Reacted to story! 😂", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    private fun loadStoryFromFirebase(storyId: String) {
-        val dbRef = FirebaseDatabase.getInstance().reference.child("stories").child(storyId)
-        dbRef.addListenerForSingleValueEvent(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                if (snapshot.exists()) {
-                    val story = snapshot.getValue(Story::class.java)
-                    if (story != null) {
-                        val hoursAgo = ((System.currentTimeMillis() - story.timestamp) / (1000 * 60 * 60)).coerceAtLeast(1)
-                        bindStoryData(story.username, "${hoursAgo}h", story.textLabel, story.mediaUri, story.mediaType)
-                    }
-                }
-            }
-
-            override fun onCancelled(error: DatabaseError) {}
-        })
     }
 
     private fun bindStoryData(username: String, timeAgo: String, textLabel: String, mediaUri: String, mediaType: String) {
