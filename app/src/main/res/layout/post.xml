@@ -26,6 +26,7 @@
             android:layout_weight="1" />
 
         <TextView
+            android:id="@+id/btnSubmitPost"
             android:layout_width="wrap_content"
             android:layout_height="32dp"
             android:background="@color/teal"
@@ -35,7 +36,9 @@
             android:text="Post"
             android:textColor="#FFFFFF"
             android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true" />
     </LinearLayout>
 
     <LinearLayout
@@ -75,14 +78,19 @@
         </LinearLayout>
     </LinearLayout>
 
-    <TextView
+    <EditText
+        android:id="@+id/etPostContent"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_marginTop="12dp"
         android:layout_weight="1"
-        android:text="Weekend plan: coffee, sketching,\nand absolutely no email."
+        android:background="@null"
+        android:gravity="top"
+        android:hint="What's on your mind?"
         android:textColor="#000000"
-        android:textSize="18sp" />
+        android:textColorHint="#999999"
+        android:textSize="18sp"
+        android:inputType="textMultiLine|textCapSentences" />
 
     <LinearLayout
         android:layout_width="match_parent"
